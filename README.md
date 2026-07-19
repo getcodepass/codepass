@@ -5,7 +5,7 @@ Single-pass PR review plugin for Claude Code. Posts inline GitHub comments, chec
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
-- [`gh` CLI](https://cli.github.com/) installed and authenticated (`gh auth login`)
+- GitHub API access from the command line — either the [`gh` CLI](https://cli.github.com/) authenticated (`gh auth login`), or a token in `GITHUB_TOKEN` / `GH_TOKEN`. codepass uses whatever is already set up; it does not manage credentials.
 
 ## Installation
 
@@ -34,6 +34,9 @@ Then use the slash command inside Claude Code:
 
 # Analyze without posting (dry run)
 /codepass:pr-review 219 --dry-run
+
+# Re-review even if you already reviewed the current commit
+/codepass:pr-review 219 --force
 ```
 
 ## Features
@@ -78,8 +81,8 @@ After analysis, choose which findings to post:
 
 ## How It Works
 
-1. Verifies `gh` authentication
-2. Parses PR number or URL, resolves repo with `--repo` for all API calls
+1. Confirms it can reach the GitHub API with your existing access
+2. Parses PR number or URL, resolves the target repo explicitly for all API calls
 3. Fetches PR metadata, diff, and review threads (3 parallel API calls)
 4. Warns if PR has 50+ changed files
 5. Reads CLAUDE.md conventions from the **base branch** (not the PR head)
@@ -95,7 +98,7 @@ No configuration needed — but works best when your repo has a `CLAUDE.md` with
 
 The plugin:
 - Detects repo from your current directory or from the provided URL
-- Uses your `gh` CLI authentication for all GitHub API calls
+- Uses whatever GitHub access is already configured (`gh` CLI, or a token in `GITHUB_TOKEN` / `GH_TOKEN`)
 - Reads `CLAUDE.md` files from the base branch of whatever repo the PR targets
 - Posts reviews under your own GitHub account
 - Pins reviews to the PR's head commit SHA to avoid stale line comments
@@ -105,7 +108,7 @@ The plugin:
 - **Review threads**: Fetches up to 100 threads with 20 comments each
 - **Binary/lock files**: Automatically skipped
 - **Large PRs**: Warns at 50+ files. Files prioritized by diff size.
-- **Fork PRs**: Requires the fork repo to be accessible to your `gh` token
+- **Fork PRs**: Requires the fork repo to be readable with your GitHub access
 - **Duplicate reviews**: Running twice creates a second review (GitHub doesn't support editing reviews)
 
 ## Contributing
