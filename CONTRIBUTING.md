@@ -9,7 +9,7 @@ Open a [GitHub issue](https://github.com/getcodepass/codepass/issues/new?templat
 - Steps to reproduce (PR number/URL, flags used)
 - Expected vs actual behavior
 - Claude Code version (`claude --version`)
-- `gh` CLI version (`gh --version`)
+- How you access GitHub (`gh` CLI — `gh --version` — or a token)
 - OS
 
 ## Suggesting Features
@@ -45,7 +45,7 @@ claude plugin validate .
 ## Submitting Changes
 
 1. Fork the repo and create a branch from `main`
-2. Make your changes to `plugins/codepass/commands/pr-review.md` or other files
+2. Make your changes to `plugins/codepass/skills/pr-review/SKILL.md` or other files
 3. Run `claude plugin validate .` to ensure the plugin is valid
 4. Test your changes against at least one real PR with `--dry-run`
 5. Open a PR with a clear description of what changed and why
@@ -58,7 +58,7 @@ claude plugin validate .
 
 ### Style
 
-- `pr-review.md` is a prompt file — write clear, unambiguous instructions
+- `SKILL.md` is a prompt file — write clear, unambiguous instructions
 - Keep bash examples copy-pasteable
 - Severity/confidence thresholds should be justified
 

@@ -1,6 +1,6 @@
 {
   "name": "codepass",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Single-pass PR review with inline GitHub comments, Copilot checking, test plan validation, and smart auto-disposition",
   "author": {
     "name": "smartniggs",

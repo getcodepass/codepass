@@ -34,12 +34,12 @@ body:
     validations:
       required: true
   - type: input
-    id: gh-version
+    id: github-access
     attributes:
-      label: gh CLI version
-      placeholder: "Output of: gh --version"
+      label: How you access GitHub
+      placeholder: "gh CLI (output of: gh --version), or a token in $GITHUB_TOKEN / $GH_TOKEN"
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: os
     attributes:

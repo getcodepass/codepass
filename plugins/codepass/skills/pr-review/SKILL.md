@@ -1,405 +1,171 @@
 ---
 description: "Review a PR with inline GitHub comments, Copilot checking, test plan validation, and smart disposition"
-argument-hint: "<PR-number-or-URL> [--dry-run]"
+argument-hint: "<PR-number-or-URL> [--dry-run] [--force]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read"]
 ---
 
 # PR Review Agent
 
-You are a precise, single-pass PR reviewer. Follow every step below exactly. Do NOT spawn sub-agents or use the Task tool. Do NOT modify any local files. Keep total token usage under 150K by being concise in your analysis.
+A precise, single-pass reviewer for **one** PR. Fanning out across many PRs is the caller's job —
+this stays self-contained. Do NOT spawn sub-agents. Do NOT modify local files. Stay concise; a review
+that costs 150K tokens is a failed review.
 
----
+Reach GitHub however this environment already allows — the `gh` CLI if it's authenticated, otherwise
+the GitHub API with `curl` and a token from `$GITHUB_TOKEN` or `$GH_TOKEN`. Don't set up or store
+credentials; use what's already there. If nothing has access, say so plainly and stop — fixing that is
+the user's environment to sort out, not this skill's job to work around.
 
-## Step 0: Verify GitHub Authentication
+## 1. Input
 
-Before anything else, verify `gh` CLI is available and authenticated:
+From `$ARGUMENTS`: a PR number or URL, `--dry-run` (analyse, post nothing), `--force` (review even if
+already reviewed). No PR given → ask which one, stop.
 
-```bash
-gh auth status 2>&1
-```
+A URL identifies its own repo; a bare number means the current one. Resolve OWNER/REPO/PR_NUMBER
+**once**, then address every later call to that explicit repo. Never let a call fall back to
+inferring the repo from the working directory — on a cross-repo review that silently reads the wrong
+code and reports confident findings about the wrong project.
 
-If this command fails or shows "not logged in", tell the user: "Please authenticate with GitHub first: `gh auth login`" and **stop**.
+## 2. Fetch
 
----
+Get these in parallel:
 
-## Step 1: Parse Input & Resolve Repository
+- **Metadata** — title, body, state, draft, author, base ref, head ref, **head SHA**, changed-file
+  count, additions/deletions, existing reviews (each with its author and **the commit it reviewed**),
+  and whether the PR is **cross-repository** (a fork), with its head owner and repo name.
+- **The full diff.**
+- **Review threads with their resolution state** — bot triage needs to know what's already resolved.
 
-Extract from `$ARGUMENTS`:
-- **PR identifier**: a bare number (e.g. `219`) or a full GitHub URL
-- **Dry-run flag**: if `--dry-run` is present, set DRY_RUN=true (analyze and present findings but do NOT post to GitHub)
+Cap threads at 100; if exactly 100 come back, warn that some may be missing.
 
-If no PR number is provided, ask the user: "Which PR should I review? Provide a number or URL."
+## 3. Eligibility
 
-### Resolve OWNER, REPO, and PR_NUMBER
+- CLOSED or MERGED → "PR #N is {state}. Nothing to review." **Stop.**
+- Draft → note it, continue.
+- **Already reviewed:** for each existing review by the current user, compare the commit it was made
+  against to the current head SHA.
+  - **Same** → "Already reviewed PR #N at `<sha>`; no new commits. Skipping." **Stop** (unless
+    `--force`). Re-reviewing an unchanged PR burns tokens and spams the author.
+  - **Different** → "Re-reviewing: new commits since your last review at `<old sha>`." Continue, and
+    concentrate on what changed since then.
+- \>50 changed files → warn it'll take a while, ask before continuing. >100 → also suggest splitting.
 
-**If the input contains `github.com`** (URL format):
-Parse the URL path to extract owner, repo, and PR number. For example, from `https://github.com/org/repo/pull/219`:
-- OWNER = `org`
-- REPO = `repo`
-- PR_NUMBER = `219`
+## 4. Context
 
-Validate the extracted repo exists:
-```bash
-gh api repos/OWNER/REPO --jq '.full_name' 2>/dev/null
-```
-If this fails, tell the user: "Could not access repository OWNER/REPO. Check the URL and your permissions." and **stop**.
+**Conventions.** Find every `CLAUDE.md` in the repo and read each **from the PR's base branch**, so
+you judge against the rules that existed *before* this PR — otherwise a PR that loosens a rule marks
+its own homework. If the PR modifies a CLAUDE.md, say you're reviewing against base. None found →
+"No CLAUDE.md — skipping convention checks", and review everything else.
 
-**If the input is a bare number**:
-Resolve from the current working directory:
-```bash
-gh repo view --json nameWithOwner -q '.nameWithOwner'
-```
-Split the result on `/` into OWNER and REPO. Set PR_NUMBER to the input number.
+**Monorepos:** the most specific CLAUDE.md governs each file — `packages/api/src/` beats
+`packages/api/` beats `packages/` beats the root. Note which one governs each finding.
 
-**CRITICAL**: Every subsequent `gh pr` command MUST include `--repo OWNER/REPO`. Every subsequent `gh api` command MUST use the full path `repos/OWNER/REPO/...`. Never rely on cwd repo detection after this step.
+**Changed files.** Skip and note, don't read: binaries (images, fonts, media, archives, compiled
+objects), submodule pointers, lockfiles (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`,
+`Cargo.lock`, `Gemfile.lock`, `poetry.lock`, `composer.lock`), and generated output (`.min.js`,
+`.min.css`, `.map`, `dist/`, `build/`).
 
----
+**Fork PRs:** the code lives in the **head** repo, not the base repo — fetch file contents from the
+head owner/repo at the head SHA, because the base repo doesn't have those blobs. The fork may have
+been renamed, so use the head repo's own name rather than assuming it matches. If contents can't be
+fetched at all, note "reviewing from diff context only" and work from the diff.
 
-## Step 2: Fetch PR Data
+\>20 reviewable files → largest diffs first; note anything skipped for budget.
 
-Run these 3 commands in parallel using the Bash tool (3 separate Bash calls in one response):
+**Imports:** read an imported file only when you need it to confirm a finding you're already forming.
+Never read every import.
 
-**2a. PR metadata:**
-```bash
-gh pr view PR_NUMBER --repo OWNER/REPO --json title,state,body,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,baseRefName,isDraft,reviews,reviewRequests,additions,deletions,changedFiles,number,url,author
-```
+## 5. Analysis
 
-Store these values for later steps:
-- `headRefOid` → COMMIT_SHA (used in Step 10 for commit pinning)
-- `isCrossRepository` → IS_FORK (used in Step 4b to choose file fetch strategy)
-- `headRepositoryOwner.login` → HEAD_OWNER (used in Step 4b for fork API calls)
-- `headRepository.name` → HEAD_REPO (used in Step 4b — may differ from REPO if fork was renamed)
+Score each finding for **severity** and **confidence (0–100)**. **Report only confidence ≥ 80** — a
+wrong inline comment costs the author more than a missed nitpick costs you.
 
-**2b. Full diff:**
-```bash
-gh pr diff PR_NUMBER --repo OWNER/REPO
-```
+**Severity** — *Critical*: security holes, data leaks, auth bypass, secrets in code · *High*: logic
+bugs that will fail, missing error handling for likely cases, breaking changes · *Medium*: CLAUDE.md
+violations, inconsistent patterns, missing validation · *Low*: style, suboptimal-but-working, missing
+types · *Nitpick*: cosmetic.
 
-**2c. Review threads with resolution status (GraphQL):**
-```bash
-gh api graphql -f query='
-{
-  repository(owner: "OWNER", name: "REPO") {
-    pullRequest(number: PR_NUMBER) {
-      reviewThreads(first: 100) {
-        nodes {
-          isResolved
-          comments(first: 20) {
-            nodes {
-              body
-              author { login }
-              path
-              line
-            }
-          }
-        }
-      }
-    }
-  }
-}'
-```
+**Eight dimensions:**
 
-If exactly 100 review threads are returned, warn: "This PR has 100+ review threads. Some may not be included in the analysis."
+1. **Security** — secrets in responses or logs, auth bypass, injection (SQL/command/XSS), insecure defaults, unsanitised input
+2. **CLAUDE.md compliance** — cite the exact rule *and which CLAUDE.md file* it came from
+3. **Bug risk** — logic errors, null handling, races, silent failures, wrong error propagation, off-by-one, type coercion
+4. **PII / data exposure** — PII logged or returned, secrets not excluded from serialisation, missing field-level access control
+5. **Error handling** — bare catches, swallowed errors, missing logging, wrong status codes, framework patterns ignored
+6. **Convention adherence** — naming, imports, DTO grouping, exports, decorators, transactions, response shape
+7. **Test plan** — §6
+8. **Bot triage** — §6
 
----
+Don't invent findings. A clean PR is clean — say so plainly.
 
-## Step 2.5: PR Size Check
+## 6. Bots and test plan
 
-Check the `changedFiles` count from Step 2a:
+**Bots.** Any author ending `[bot]`, plus `dependabot`, `renovate`, `copilot`, `netlify`, `vercel`,
+`codecov`, `codefactor`, `sonarcloud`. For each: resolved? valid against the actual code? does it
+overlap one of your findings? Summarise `N total, M resolved, K valid`.
 
-- If `changedFiles` > 50 → warn: "This PR modifies N files. Review may take several minutes. Continue?" and wait for user confirmation before proceeding.
-- If `changedFiles` > 100 → additionally warn: "This PR is exceptionally large. Consider asking the author to split it."
+**Test plan.** Empty PR body → flag Medium "No PR description (missing test plan)", skip the rest.
+Otherwise find the test plan (`## Test plan`, `Steps to test`, `Testing`, `How to test`, or checkbox
+lists under a test-ish heading). Per item: does the diff actually support it? Flag any item claiming
+something the diff never touches. No test plan → Medium. No test files touched → note "No unit tests
+included".
 
----
-
-## Step 3: Eligibility Check
-
-First, get your current GitHub username:
-```bash
-gh api user -q '.login'
-```
-
-Then check:
-- If `state` is `CLOSED` or `MERGED` → print "PR #N is {state}. Nothing to review." and **stop**.
-- If `isDraft` is `true` → print a warning: "Note: PR #N is a draft." but **continue**.
-- If any review in the `reviews` array from Step 2a has `author.login` matching your username → print "You've already reviewed this PR (last review: STATE)." but **continue**.
-
----
-
-## Step 4: Read Local Context
-
-**4a. Discover project conventions:**
-
-Use Glob to find all `**/CLAUDE.md` files in the repo root. These conventions are the rules you will evaluate against.
-
-Read each CLAUDE.md from the PR's **base branch** (not the head branch), so the review uses the conventions that existed before this PR:
-
-```bash
-git show origin/BASE_REF_NAME:path/to/CLAUDE.md 2>/dev/null
-```
-
-If `git show` fails (e.g. remote not fetched), fall back to reading the local file with the Read tool.
-
-If CLAUDE.md is being modified in this PR's diff, note: "CLAUDE.md is being modified in this PR. Reviewing against base branch version."
-
-If no CLAUDE.md exists (including cross-repo URL reviews where the local repo differs from the target), note: "No CLAUDE.md found — skipping convention checks" and still review other dimensions.
-
-**CLAUDE.md precedence for monorepos:**
-If multiple CLAUDE.md files exist, apply the most specific one to each changed file. For a file at `packages/api/src/handler.ts`, check in order:
-1. `packages/api/src/CLAUDE.md` (highest precedence)
-2. `packages/api/CLAUDE.md`
-3. `packages/CLAUDE.md`
-4. `CLAUDE.md` (repo root, lowest precedence)
-
-Use the first match found. Note which CLAUDE.md governs each file in your analysis.
-
-**4b. Read changed files:**
-
-Parse the diff from Step 2b to extract the list of changed file paths.
-
-**Skip these files — do not attempt to read them:**
-- Binary files: `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.ico`, `.svg`, `.webp`, `.pdf`, `.zip`, `.tar`, `.gz`, `.exe`, `.dll`, `.so`, `.dylib`, `.wasm`, `.pyc`, `.ttf`, `.otf`, `.woff`, `.woff2`, `.mp3`, `.mp4`, `.mov`, `.wav`
-- Submodule changes (diff shows `Subproject commit ...`)
-- Lock files: `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `Gemfile.lock`, `poetry.lock`, `composer.lock`
-- Auto-generated files: `.min.js`, `.min.css`, `.map`, `dist/`, `build/`
-
-Note each skipped file and why (e.g. "Skipped binary: assets/logo.png").
-
-For each remaining file, check `isCrossRepository` from Step 2a to determine the fetch strategy:
-
-**Same-repo PR (isCrossRepository == false):**
-Read files using the Read tool if the local checkout matches `headRefName`. Otherwise:
-```bash
-git fetch origin HEAD_REF_NAME 2>/dev/null && git show origin/HEAD_REF_NAME:FILE_PATH
-```
-
-**Fork PR (isCrossRepository == true) or if the above fetch fails:**
-Use the GitHub API to retrieve file contents at the PR's head commit. Use HEAD_OWNER and HEAD_REPO from Step 2a (not OWNER/REPO, since the code lives in the fork):
-```bash
-gh api repos/HEAD_OWNER/HEAD_REPO/contents/FILE_PATH?ref=COMMIT_SHA -q '.content' | base64 -d
-```
-
-If the contents API fails (file >1MB or not found), try the blob endpoint:
-```bash
-gh api repos/HEAD_OWNER/HEAD_REPO/git/blobs/$(gh api repos/HEAD_OWNER/HEAD_REPO/contents/FILE_PATH?ref=COMMIT_SHA -q '.sha') -q '.content' | base64 -d
-```
-
-If both fail, note: "Could not fetch FILE_PATH — will review from diff context only."
-
-**For PRs with >20 non-skipped changed files**, prioritize reading files with the largest diffs first. If approaching token limits, note which files were skipped.
-
-**4c. Read referenced imports (selective):**
-If the diff modifies a function call, constructor, or import from another file AND you need that context to validate correctness, read that imported file. Do NOT read every import — only those directly relevant to a finding you are forming.
-
----
-
-## Step 5: Single-Pass Analysis
-
-Analyze the PR across exactly these 8 dimensions. For each finding, assign a **severity** and **confidence score (0-100)**. Only report findings with **confidence >= 80**.
-
-### Severity Scale
-- **Critical**: Security vulnerabilities, data leaks, authentication bypass, secrets in code
-- **High**: Logic bugs that will cause failures, missing error handling for likely scenarios, breaking changes
-- **Medium**: Convention violations (from CLAUDE.md), inconsistent patterns, missing validation
-- **Low**: Minor style issues, suboptimal but functional code, missing types
-- **Nitpick**: Cosmetic preferences, optional improvements
-
-### 8 Dimensions
-
-1. **Security** — Token/secret exposure in responses or logs, auth bypass, injection vectors (SQL, command, XSS), insecure defaults, missing input sanitization
-2. **CLAUDE.md Compliance** — Every explicit convention violation, citing the specific rule from CLAUDE.md and which CLAUDE.md file it came from. Examples: wrong file naming, missing Logger, direct cross-module imports, wrong enum casing
-3. **Bug Risk** — Logic errors, null/undefined handling, race conditions, silent failures, incorrect error propagation, off-by-one errors, type coercion issues
-4. **PII / Data Exposure** — PII logged or returned in API responses, sensitive fields (passwords, tokens, secrets) not excluded from serialization, missing field-level access control
-5. **Error Handling** — Bare catch blocks, swallowed errors, missing error logging, incorrect HTTP status codes, framework-specific exception patterns not followed
-6. **Convention Adherence** — Naming conventions, import patterns, DTO grouping, module export rules, decorator usage, transaction patterns, response format compliance
-7. **Test Plan Validation** — Cross-reference PR body's test plan against the implementation (covered in Step 7)
-8. **Copilot / Bot Comment Triage** — Assess bot comments (covered in Step 6)
-
----
-
-## Step 6: Assess Bot Comments
-
-From the GraphQL response in Step 2c, identify all comments from bot authors:
-- Any author whose login ends with `[bot]`
-- Known bot usernames without the `[bot]` suffix: `dependabot`, `renovate`, `copilot`, `netlify`, `vercel`, `codecov`, `codefactor`, `sonarcloud`
-
-For each bot comment:
-1. **Is it resolved?** (from `isResolved` field)
-2. **Is it valid?** Does the suggestion make sense given the actual code?
-3. **Does it overlap with your own findings?** If so, note which finding number.
-
-Produce a summary: `N total bot comments, M resolved, K valid`
-
----
-
-## Step 7: Validate Test Plan
-
-If the PR body is empty or null, flag as Medium: "No PR description provided (missing test plan)" and skip the rest of this step.
-
-Otherwise, parse the test plan section from the PR body. Look for any of these headings:
-- `## Test plan`
-- `## Test Plan`
-- `## Steps to test`
-- `## Testing`
-- `## How to test`
-- Checkbox lists (`- [ ]` or `- [x]`) under any test-related heading
-
-For each test plan item:
-- Check if the implementation in the diff supports/covers it
-- Flag items that claim something works but the diff doesn't touch that area
-
-Also note:
-- If no test plan section exists → flag as Medium: "No test plan in PR description"
-- If no unit test files are modified or added → note: "No unit tests included"
-
----
-
-## Step 8: Determine Disposition
-
-Apply this logic:
+## 7. Disposition
 
 ```
-IF no findings with severity >= Medium
-   AND all bot comments are resolved (or no bot comments exist)
-   AND all test plan items are covered
-→ disposition = APPROVE
-
-ELSE IF any finding has severity >= High
-→ disposition = REQUEST_CHANGES
-
-ELSE
-→ disposition = COMMENT
+no findings ≥ Medium AND all bot comments resolved AND all test plan items covered  → APPROVE
+any finding ≥ High                                                                  → REQUEST_CHANGES
+otherwise                                                                            → COMMENT
 ```
 
----
-
-## Step 9: Present Findings to User
-
-Display a structured summary. Use this exact format:
+## 8. Present
 
 ```markdown
-## PR #<N> Review: <PR title>
+## PR #<N> Review: <title>
+**Branch**: `<head>` → `<base>` | **Changes**: +<add> -<del> across <n> files
+**Commit**: `<short SHA>`
 
-**Branch**: `<head>` → `<base>` | **Changes**: +<additions> -<deletions> across <changedFiles> files
-**Commit**: `<COMMIT_SHA short>`
-
-### Findings
-<count> findings (<breakdown by severity>)
-
+### Findings — <count> (<breakdown by severity>)
 | # | Sev | File | Line | Finding | Confidence |
 |---|-----|------|------|---------|------------|
-| 1 | Critical | path/to/file.ts | 64 | Description | 95% |
-| 2 | Medium | path/to/other.ts | 12 | Description | 85% |
-| ... |
 
-### Bot Comments
-<N> total, <M> resolved, <K> valid
-
+### Bot Comments — <N> total, <M> resolved, <K> valid
 | # | Author | Status | Valid? | Overlaps | Summary |
 |---|--------|--------|--------|----------|---------|
-| C1 | copilot[bot] | Unresolved | Yes | Finding #1 | ... |
-| ... |
 
-### Test Plan
-<status summary>
-
+### Test Plan — <status>
 | # | Item | Covered? | Notes |
 |---|------|----------|-------|
-| T1 | "Test OAuth flow" | Yes | Covered by changes in oauth.controller.ts |
-| ... |
 
 ### Skipped Files
-<list of files skipped and why, if any>
+<what and why, if any>
 
 ### Disposition: <APPROVE | COMMENT | REQUEST_CHANGES>
-<one-line explanation of why>
+<one line why>
 ```
 
-Then ask the user TWO questions:
+`--dry-run` → stop here: "Dry run complete. No review posted."
 
-1. **"Which findings to post?"** — Accept: `all`, `none`, comma-separated numbers (e.g. `1,2,5`), or severity filter (`critical+high`, `medium+`)
-2. **"Override disposition?"** — Accept: `approve`, `comment`, `request-changes`, or just press Enter to keep the recommended one
+Otherwise ask two questions: **which findings to post?** (`all`, `none`, `1,2,5`, `critical+high`,
+`medium+`) and **override disposition?** (`approve`, `comment`, `request-changes`, or Enter to keep).
 
-If DRY_RUN is true, display the summary and skip to "Dry run complete. No review posted." Do NOT ask the questions above.
+## 9. Post
 
----
+Post **one** review carrying the summary plus the selected findings as inline comments. What matters:
 
-## Step 10: Post Review to GitHub
+- **Pin the review to the head SHA you actually read**, so it can't attach to commits you never saw.
+- **An inline comment's line must fall inside a diff hunk.** Can't map a finding confidently? Summary
+  table only — a comment on the wrong line is worse than no comment.
+- **Deleted files take the `LEFT` side**; everything else `RIGHT`.
+- **Send the payload on stdin — never a temp file.** A file needs cleaning up (and won't be, if the
+  post fails), it leaks findings into a shared temp dir, and a fixed name collides when several
+  reviews run at once.
+- **Guard the escaping.** Findings quote real code: `$`, backticks, quotes, newlines. Pass the
+  payload literally so the shell can't interpret it.
+- Footer the summary with `*Reviewed with [codepass](https://github.com/getcodepass/codepass)*`.
 
-After the user responds, construct the review payload.
+**Errors.** A 422 is almost always a bad line mapping — drop **all** inline comments, move those
+findings into the summary table, retry **once**. A 403 means the credential lacks `repo` scope: say
+so. Anything else: surface it and offer to save the payload for inspection. Never retry more than
+once.
 
-**Build the summary comment body** (goes in the review's top-level `body` field):
-
-```markdown
-## PR Review Summary
-
-**Findings**: <count> (<breakdown>)
-**Bot Comments**: <N> total, <M> resolved, <K> valid
-**Test Plan**: <status>
-
-| # | Sev | File | Line | Finding |
-|---|-----|------|------|---------|
-<selected findings only>
-
----
-*Reviewed with [codepass](https://github.com/getcodepass/codepass)*
-```
-
-**Build inline comments** for each selected finding.
-
-First, determine the file's change type from the diff:
-- If diff shows `deleted file mode` → file is DELETED (use `"side": "LEFT"`)
-- Otherwise → use `"side": "RIGHT"`
-
-For DELETED files:
-```json
-{
-  "path": "<file_path relative to repo root>",
-  "line": <line_number>,
-  "side": "LEFT",
-  "body": "**[<Severity>]** <finding description>"
-}
-```
-
-For all other files:
-```json
-{
-  "path": "<file_path relative to repo root>",
-  "line": <line_number>,
-  "side": "RIGHT",
-  "body": "**[<Severity>]** <finding description>"
-}
-```
-
-The `line` must be a line number that exists in the diff hunk range. If you cannot confidently map a finding to a diff line, include it ONLY in the summary body, not as an inline comment.
-
-**Post the review by writing the complete JSON payload to a temp file, then posting it.**
-
-Construct the full JSON object with all values inlined (event, body, commit_id, comments array). Write it to a temp file using a quoted heredoc so no shell expansion occurs:
-
-```bash
-cat > /tmp/codepass-review.json << '__CODEPASS_PAYLOAD_END__'
-{
-  "event": "REQUEST_CHANGES",
-  "body": "## PR Review Summary\n\n...",
-  "commit_id": "abc123def456",
-  "comments": [
-    {"path": "src/file.ts", "line": 64, "side": "RIGHT", "body": "**[Critical]** Finding description here"},
-    {"path": "src/other.ts", "line": 12, "side": "RIGHT", "body": "**[Medium]** Another finding"}
-  ]
-}
-__CODEPASS_PAYLOAD_END__
-gh api repos/OWNER/REPO/pulls/PR_NUMBER/reviews --method POST --input /tmp/codepass-review.json
-rm -f /tmp/codepass-review.json
-```
-
-The quoted heredoc (`<< '__CODEPASS_PAYLOAD_END__'`) writes literal content — no variable expansion, no escaping issues. The delimiter is deliberately unusual so it cannot appear in review content. You (Claude) know all the values, so inline them directly into the JSON. Ensure all strings are valid JSON (escape double quotes as `\"` and newlines as `\n` within JSON string values).
-
-**Error handling for posting:**
-
-- If posting fails with a **422 error**, it's usually a bad line mapping. Remove ALL inline comments and retry with only the summary body. Move all inline findings into the summary table.
-- If posting fails with a **403 error**, tell the user: "Permission denied. Check that your `gh` token has the `repo` scope."
-- If posting fails with any other error, display the error and offer to save the payload to a local file for manual inspection.
-- Do NOT retry more than once.
-
-After successful posting, display: "Review posted to PR #N as DISPOSITION. X inline comments added."
+Done → "Review posted to PR #N as DISPOSITION. X inline comments added."
