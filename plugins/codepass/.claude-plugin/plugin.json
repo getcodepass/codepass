@@ -1,7 +1,7 @@
 {
   "name": "codepass",
-  "version": "1.2.0",
-  "description": "Single-pass PR review with inline GitHub comments, Copilot checking, test plan validation, and smart auto-disposition",
+  "version": "2.0.0",
+  "description": "Single-pass code review for PRs and local changes — inline GitHub comments, CLAUDE.md convention citations, test plan validation, and smart auto-disposition",
   "author": {
     "name": "smartniggs",
     "email": "getcodepass@users.noreply.github.com"
