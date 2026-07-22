@@ -87,7 +87,7 @@ After analysis, choose which findings to post:
 | [Qodo Merge](https://github.com/qodo-ai/pr-agent) | Free (OSS) / $30-45/dev/mo | Diff + token budgeting + chunking | Config files (paid) | Single LLM call | No | Active |
 
 **What makes codepass different:**
-- **Convention-first** — reads your `CLAUDE.md` and cites specific rule violations. No other tool does this natively.
+- **Convention-first** — reads your `CLAUDE.md` from the ref the diff is judged against — the PR's base branch, or `HEAD` locally — and cites the exact rule violated. Pinning conventions to that ref means a change can't loosen the rules it's graded by: it never marks its own homework. No other tool does this natively.
 - **Reviews before the PR exists** — the same reviewer runs on your uncommitted work locally, so problems get caught before anything is pushed.
 - **Single-pass, zero agents** — one context window, no agent spawning.
 - **You control what gets posted** — selective posting by finding number or severity threshold. No auto-spam.
