@@ -4,18 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Claude Code plugin marketplace containing one plugin, **codepass** — a single-pass code review skill invoked as `/codepass:review`, covering both GitHub PRs and local (pre-commit) changes. There is no build system, test suite, or application code: the entire implementation is the prompt file `plugins/codepass/skills/review/SKILL.md`. Changes here are prompt engineering, not programming.
+A Claude Code plugin marketplace containing one plugin, **codepass** — a single-pass code review skill invoked as `/codepass:pr-review`, covering both GitHub PRs and local (pre-commit) changes. There is no build system or application code: the entire implementation is the prompt file `plugins/codepass/skills/pr-review/SKILL.md`. Changes here are prompt engineering, not programming — regression-tested by the eval suite in `tests/` (see `tests/README.md`; each scenario costs a real model run).
 
 ## Layout
 
 - `.claude-plugin/marketplace.json` — marketplace manifest (`pluginRoot: ./plugins`)
 - `plugins/codepass/.claude-plugin/plugin.json` — plugin manifest
-- `plugins/codepass/skills/review/SKILL.md` — the whole implementation
+- `plugins/codepass/skills/pr-review/SKILL.md` — the whole implementation
+- `tests/` — eval harness: fixture scenarios + invariant grading (`bash tests/run-evals.sh [scenario]`)
 
 ## Commands
 
 - Validate manifests and skill: `claude plugin validate .`
-- Test a change: from a Claude Code session in any repo with an open PR, run `/codepass:review <PR-number-or-URL> --dry-run` (analyzes, posts nothing). Pass a full PR URL to exercise the cross-repo path. For local mode, run `/codepass:review` with no argument in a repo with uncommitted or unmerged work — it only prints, never posts.
+- Test a change: from a Claude Code session in any repo with an open PR, run `/codepass:pr-review <PR-number-or-URL> --dry-run` (analyzes, posts nothing). Pass a full PR URL to exercise the cross-repo path. For local mode, run `/codepass:pr-review` with no argument in a repo with uncommitted or unmerged work — it only prints, never posts.
 
 ## Versioning
 

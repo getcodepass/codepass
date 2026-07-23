@@ -14,7 +14,7 @@ body:
     attributes:
       label: Steps to reproduce
       value: |
-        1. Ran `/codepass:review ...`
+        1. Ran `/codepass:pr-review ...`
         2.
         3.
     validations:
