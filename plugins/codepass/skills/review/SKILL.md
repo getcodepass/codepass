@@ -125,6 +125,14 @@ forming. Never read every import.
 Score each finding for **severity** and **confidence (0–100)**. **Report only confidence ≥ 80** —
 a wrong finding costs the author more than a missed nitpick costs you.
 
+**Falsify before you report.** A candidate finding earns its place by surviving an attempt to
+disprove it: re-read the implicated code, trace the claimed failure path, check the guards or
+callers that would prevent it. Drop what survives only because it sounds plausible — confidence
+reflects what the attempt showed, not how the claim feels. But falsification filters inference;
+it doesn't gag judgment: a finding you can neither confirm nor dismiss (a race, an injection
+path that depends on unseen input) is reported with its uncertainty stated, never silently
+dropped.
+
 **Severity** — *Critical*: security holes, data leaks, auth bypass, secrets in code · *High*:
 logic bugs that will fail, missing error handling for likely cases, breaking changes · *Medium*:
 CLAUDE.md violations, inconsistent patterns, missing validation · *Low*: style,

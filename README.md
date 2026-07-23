@@ -89,6 +89,7 @@ After analysis, choose which findings to post:
 **What makes codepass different:**
 - **Convention-first** — reads your `CLAUDE.md` from the ref the diff is judged against — the PR's base branch, or `HEAD` locally — and cites the exact rule violated. Pinning conventions to that ref means a change can't loosen the rules it's graded by: it never marks its own homework. No other tool does this natively.
 - **Reviews before the PR exists** — the same reviewer runs on your uncommitted work locally, so problems get caught before anything is pushed.
+- **Findings must survive falsification** — before reporting, the reviewer tries to disprove each candidate against the actual code; what survives only by plausibility gets dropped, not posted.
 - **Single-pass, zero agents** — one context window, no agent spawning.
 - **You control what gets posted** — selective posting by finding number or severity threshold. No auto-spam.
 
