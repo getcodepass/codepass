@@ -33,26 +33,26 @@ claude plugin validate .
 
 ```bash
 # In any repo with an open PR:
-/codepass:review <PR-number> --dry-run
+/codepass:pr-review <PR-number> --dry-run
 ```
 
 ### Test cross-repo review
 
 ```bash
-/codepass:review https://github.com/owner/repo/pull/123 --dry-run
+/codepass:pr-review https://github.com/owner/repo/pull/123 --dry-run
 ```
 
 ### Test local mode
 
 ```bash
 # In any repo with uncommitted changes or unmerged commits — prints only, never posts:
-/codepass:review
+/codepass:pr-review
 ```
 
 ## Submitting Changes
 
 1. Fork the repo and create a branch from `main`
-2. Make your changes to `plugins/codepass/skills/review/SKILL.md` or other files
+2. Make your changes to `plugins/codepass/skills/pr-review/SKILL.md` or other files
 3. Run `claude plugin validate .` to ensure the plugin is valid
 4. Test your changes against at least one real PR with `--dry-run` — and run local mode too if your change touches it
 5. Open a PR with a clear description of what changed and why

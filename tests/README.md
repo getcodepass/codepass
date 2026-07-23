@@ -1,8 +1,8 @@
 # Evals
 
-Regression tests for `plugins/codepass/skills/review/SKILL.md`. Each scenario generates a
+Regression tests for `plugins/codepass/skills/pr-review/SKILL.md`. Each scenario generates a
 throwaway fixture repo in a temp dir (fixtures are generator scripts, never committed repos),
-invokes `/codepass:review` headlessly against **this checkout's** plugin (`--plugin-dir`, not
+invokes `/codepass:pr-review` headlessly against **this checkout's** plugin (`--plugin-dir`, not
 whatever version is installed), and greps the report for coarse invariants — dimension,
 severity, secret masking, disposition. Never exact output: LLM output varies, invariants stay
 stable.

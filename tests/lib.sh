@@ -76,7 +76,7 @@ with_timeout() {
 # Non-zero exit (e.g. timeout on a scenario that must ask) is recorded, not fatal — grading
 # decides pass/fail from the captured output.
 run_review() {
-  local prompt="${1:-/codepass:review}"
+  local prompt="${1:-/codepass:pr-review}"
   local model_args=()
   if [ -n "$EVAL_MODEL" ]; then model_args=(--model "$EVAL_MODEL"); fi
   RUN_RC=0

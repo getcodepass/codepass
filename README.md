@@ -28,19 +28,19 @@ Then use the slash command inside Claude Code:
 ```bash
 # Review your local changes before you commit — uncommitted work and/or
 # commits not yet merged to your base branch. Prints findings, posts nothing.
-/codepass:review
+/codepass:pr-review
 
 # Review a PR by number
-/codepass:review 219
+/codepass:pr-review 219
 
 # Review a PR by URL
-/codepass:review https://github.com/org/repo/pull/219
+/codepass:pr-review https://github.com/org/repo/pull/219
 
 # Analyze a PR without posting (dry run)
-/codepass:review 219 --dry-run
+/codepass:pr-review 219 --dry-run
 
 # Re-review even if you already reviewed the current commit
-/codepass:review 219 --force
+/codepass:pr-review 219 --force
 ```
 
 ## Features
