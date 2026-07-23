@@ -41,4 +41,4 @@ These constraints in the skill prompt are deliberate — don't relax them casual
 - Keep bash examples copy-pasteable.
 - Justify any change to severity/confidence thresholds.
 
-Note: codepass reads the reviewed repo's `CLAUDE.md` as its convention source, so when a PR against *this* repo is reviewed with codepass, the rules in this file get cited verbatim.
+Note: codepass reads the reviewed repo's `CLAUDE.md` and `.claude/rules/` as its convention sources, so when a PR against *this* repo is reviewed with codepass, the rules in this file get cited verbatim.

@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "PR review and code quality tools for Claude Code",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "pluginRoot": "./plugins"
   },
   "plugins": [
     {
       "name": "codepass",
       "description": "Single-pass code review for PRs and local changes — inline GitHub comments, CLAUDE.md convention citations, test plan validation, and smart auto-disposition",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "author": {
         "name": "smartniggs",
         "email": "getcodepass@users.noreply.github.com"
