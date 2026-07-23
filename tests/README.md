@@ -42,7 +42,7 @@ Knobs (env vars):
 |------|--------|
 | `secret` | hardcoded secret → Critical finding; the value itself is never echoed |
 | `logic-bug` | guaranteed-crash bug → High-or-worse finding, REQUEST_CHANGES |
-| `claude-md` | diff breaks the fixture repo's own CLAUDE.md rule → finding cites CLAUDE.md |
+| `claude-md` | diff breaks the fixture's CLAUDE.md rule and a `.claude/rules/` rule → findings cite each convention file |
 | `clean` | benign diff → zero findings, APPROVE ("don't invent findings") |
 | `untracked` | defect only in an untracked file (in no diff) → still reviewed |
 | `base-trap` | upstream is the same-named push target → base must resolve to main, not origin/feature |

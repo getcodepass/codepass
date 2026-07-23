@@ -1,6 +1,6 @@
 # codepass
 
-Single-pass code review plugin for Claude Code — review a GitHub PR, or your local changes before you commit. Posts inline PR comments, cites your CLAUDE.md conventions, validates test plans, and auto-determines review disposition.
+Single-pass code review plugin for Claude Code — review a GitHub PR, or your local changes before you commit. Cites your CLAUDE.md conventions, validates test plans, and auto-determines review disposition; in PR mode it posts the review as inline comments.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ Single-pass code review plugin for Claude Code — review a GitHub PR, or your l
 
 ```bash
 claude plugin marketplace add getcodepass/codepass
-claude plugin install codepass
+claude plugin install codepass@codepass
 ```
 
 ## Usage
@@ -72,7 +72,7 @@ In local mode the same thresholds read as a readiness verdict — APPROVE means 
 After analysis, choose which findings to post:
 - `all` — Post everything
 - `1,2,5` — Post specific findings by number
-- `critical+high` — Post by severity threshold
+- `critical+high` / `medium+` — Post by severity threshold
 - `none` — Skip posting
 
 ## How It Compares
@@ -80,14 +80,13 @@ After analysis, choose which findings to post:
 | Tool | Cost | Context | Convention Awareness | Structured Analysis | Disposition Logic | Status |
 |------|------|---------|---------------------|--------------------|--------------------|--------|
 | **codepass** | **Free** | **Changed files + diff + metadata (single pass)** | **Yes (CLAUDE.md)** | **7 dimensions** | **Yes** | **Active** |
-| [ai-pr-reviewer](https://github.com/coderabbitai/ai-pr-reviewer) | Free (BYOK) | Diff chunks (incremental) | No | None | No | Unmaintained |
 | [ai-codereviewer](https://github.com/villesau/ai-codereviewer) | Free (BYOK) | Diff chunks (one-shot) | No | None | No | Unmaintained |
 | [CodeRabbit](https://coderabbit.ai) | $12-24/dev/mo | Full repo clone + code graph + semantic index | Config files | Multi-linter (40+) | Yes | Active |
-| [Copilot PR Review](https://docs.github.com/en/copilot) | $10-39/dev/mo | Diff + agentic file retrieval | `.github/copilot-instructions.md` | Risk scoring | No | Active |
-| [Qodo Merge](https://github.com/qodo-ai/pr-agent) | Free (OSS) / $30-45/dev/mo | Diff + token budgeting + chunking | Config files (paid) | Single LLM call | No | Active |
+| [Copilot PR Review](https://docs.github.com/en/copilot) | $10-39/dev/mo + metered AI credits | Diff + agentic file retrieval | `.github/copilot-instructions.md` | Risk scoring | No | Active |
+| [Qodo Merge](https://github.com/qodo-ai/pr-agent) | Free (OSS) / credit-based from $30/mo | Diff + token budgeting + chunking | Config files (paid) | Single LLM call | No | Active |
 
 **What makes codepass different:**
-- **Convention-first** — reads your `CLAUDE.md` from the ref the diff is judged against — the PR's base branch, or `HEAD` locally — and cites the exact rule violated. Pinning conventions to that ref means a change can't loosen the rules it's graded by: it never marks its own homework. No other tool does this natively.
+- **Convention-first** — reads your `CLAUDE.md` and `.claude/rules/` from the ref the diff is judged against — the PR's base branch, or `HEAD` locally — and cites the exact rule violated. Pinning conventions to that ref means a change can't loosen the rules it's graded by: it never marks its own homework. No other tool does this natively.
 - **Reviews before the PR exists** — the same reviewer runs on your uncommitted work locally, so problems get caught before anything is pushed.
 - **Findings must survive falsification** — before reporting, the reviewer tries to disprove each candidate against the actual code; what survives only by plausibility gets dropped, not posted.
 - **Single-pass, zero agents** — one context window, no agent spawning.
@@ -101,7 +100,7 @@ After analysis, choose which findings to post:
 2. Parses PR number or URL, resolves the target repo explicitly for all API calls
 3. Fetches PR metadata, diff, and review threads (3 parallel API calls)
 4. Warns if PR has 50+ changed files
-5. Reads CLAUDE.md conventions from the **base branch** (not the PR head)
+5. Reads CLAUDE.md and `.claude/rules/` conventions from the **base branch** (not the PR head)
 6. Fetches changed files — uses GitHub API for fork PRs, skips binaries/lockfiles
 7. Analyzes across 7 dimensions in a single pass
 8. Presents structured findings with severity and confidence scores
@@ -112,28 +111,28 @@ After analysis, choose which findings to post:
 
 1. Detects what there is to review with read-only git commands: uncommitted work (including untracked files), commits not yet merged to your base branch, or both — and asks when it's ambiguous
 2. Resolves the base as your merge target (upstream if it's a different branch, else the default branch), never the push target
-3. Reads CLAUDE.md conventions from the ref the diff is judged against (`HEAD` for uncommitted work, the base for branch review)
+3. Reads CLAUDE.md and `.claude/rules/` conventions from the ref the diff is judged against (`HEAD` for uncommitted work, the base for branch review)
 4. Analyzes the same 7 dimensions and prints the same structured report
 5. Stops there — nothing is posted, nothing leaves your machine
 
 ## Configuration
 
-No configuration needed — but works best when your repo has a `CLAUDE.md` with project conventions. Without one, codepass skips convention checks and still reviews the other six dimensions.
+No configuration needed — but works best when your repo has a `CLAUDE.md` or `.claude/rules/` with project conventions. Without either, codepass skips convention checks and still reviews the other six dimensions.
 
 The plugin:
 - Detects repo from your current directory or from the provided URL
 - Uses whatever GitHub access is already configured (`gh` CLI, or a token in `GITHUB_TOKEN` / `GH_TOKEN`)
-- Reads `CLAUDE.md` files from the base branch of whatever repo the PR targets
+- Reads `CLAUDE.md` and `.claude/rules/` conventions from the ref the diff is judged against — the PR's base branch, or `HEAD`/your base branch locally
 - Posts reviews under your own GitHub account
 - Pins reviews to the PR's head commit SHA to avoid stale line comments
 
 ## Limitations
 
-- **Review threads**: Fetches up to 100 threads with 20 comments each
+- **Review threads**: Fetches up to 100 threads; warns if the cap was hit
 - **Binary/lock files**: Automatically skipped
 - **Large PRs**: Warns at 50+ files. Files prioritized by diff size.
 - **Fork PRs**: Requires the fork repo to be readable with your GitHub access
-- **Duplicate reviews**: Running twice creates a second review (GitHub doesn't support editing reviews)
+- **Duplicate reviews**: Re-running on an unchanged PR is skipped unless `--force`; a re-review posts a second review (GitHub doesn't support editing reviews)
 - **Local mode**: report only — never posts, and never modifies your working tree (read-only git throughout)
 
 ## Contributing

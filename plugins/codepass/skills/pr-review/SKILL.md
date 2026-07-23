@@ -90,18 +90,21 @@ suggest splitting.
 
 ## 4. Context
 
-**Conventions.** Find every `CLAUDE.md` in the repo and read each **from the ref the diff is
-judged against**, so a change can't loosen the rules it's graded by — otherwise it marks its own
-homework:
+**Conventions.** Find every `CLAUDE.md` and every rule file under any `.claude/rules/` directory
+in the repo (all `*.md`, nested subdirectories included; a rule with `paths:` globs in its
+frontmatter applies only to files matching them) and read each **from the ref the diff is judged
+against**, so a
+change can't loosen the rules it's graded by — otherwise it marks its own homework:
 
 - PR mode → the PR's **base branch**.
 - Local, uncommitted → **HEAD**.
 - Local, branch vs base → the **base**.
 
-If the diff modifies a CLAUDE.md, say you're reviewing against the pre-change version. None found
-→ "No CLAUDE.md — skipping convention checks", and review everything else.
+If the diff modifies a convention file, say you're reviewing against the pre-change version. None
+found → "No CLAUDE.md or `.claude/rules` — skipping convention checks", and review everything
+else.
 
-**Monorepos:** the most specific CLAUDE.md governs each file — `packages/api/src/` beats
+**Monorepos:** the most specific convention file governs each file — `packages/api/src/` beats
 `packages/api/` beats `packages/` beats the root. Note which one governs each finding.
 
 **Changed files.** Skip and note, don't read: binaries (images, fonts, media, archives, compiled
@@ -141,7 +144,7 @@ suboptimal-but-working, missing types · *Nitpick*: cosmetic.
 **Seven dimensions:**
 
 1. **Security** — secrets in responses or logs, auth bypass, injection (SQL/command/XSS), insecure defaults, unsanitised input
-2. **CLAUDE.md compliance** — cite the exact rule *and which CLAUDE.md file* it came from
+2. **CLAUDE.md compliance** — cite the exact rule *and which convention file* it came from
 3. **Bug risk** — logic errors, null handling, races, silent failures, wrong error propagation, off-by-one, type coercion
 4. **PII / data exposure** — PII logged or returned, secrets not excluded from serialisation, missing field-level access control
 5. **Error handling** — bare catches, swallowed errors, missing logging, wrong status codes, framework patterns ignored
