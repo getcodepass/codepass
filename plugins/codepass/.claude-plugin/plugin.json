@@ -1,6 +1,6 @@
 {
   "name": "codepass",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Single-pass code review for PRs and local changes — inline GitHub comments, CLAUDE.md convention citations, test plan validation, and smart auto-disposition",
   "author": {
     "name": "smartniggs",
