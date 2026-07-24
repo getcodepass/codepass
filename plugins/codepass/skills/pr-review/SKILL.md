@@ -1,15 +1,16 @@
 ---
 description: "Review a GitHub PR or your local changes before you commit — severity/confidence findings, CLAUDE.md convention citations, test plan validation, and smart disposition"
-argument-hint: "[PR-number-or-URL] [--dry-run] [--force]"
+argument-hint: "[PR-number-or-URL] [--dry-run] [--force] [--fleet]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read"]
 ---
 
 # Review Agent
 
-A precise, single-pass reviewer with two modes: a **PR** (posts a GitHub review) or the **local
-working copy** (prints findings — nothing leaves the machine). One review at a time; fanning out
-across many PRs is the caller's job — this stays self-contained. Do NOT spawn sub-agents. Do NOT
-modify local files. Never reproduce a secret's value anywhere in your output — not in narration,
+A precise reviewer — single-pass by default — with two modes: a **PR** (posts a GitHub review)
+or the **local working copy** (prints findings — nothing leaves the machine). One review at a
+time; fanning out across many PRs is the caller's job — this stays self-contained. Do NOT spawn
+sub-agents unless fleet mode is active (§5 — only ever via `--fleet` or an explicit interactive
+yes). Do NOT modify local files. Never reproduce a secret's value anywhere in your output — not in narration,
 findings, remediation advice, or posted comments. Identify a secret by variable name and location
 (`DB_PASSWORD` at `app.py:3`); if you quote a line containing one, replace the value with
 `<redacted>`. Echoing the value spreads the leak — this output gets read, logged, and posted.
@@ -24,6 +25,9 @@ From `$ARGUMENTS`:
 - **Nothing** → **local mode**: review uncommitted and/or unmerged work in the current repo.
   `--dry-run` and `--force` do nothing here — say so if passed; local mode never posts and never
   skips.
+- `--fleet` (either mode) → fan the reading out across read-only sub-agents (§5). Without this
+  flag — or an explicit yes at the §3 gate — never fleet; a headless run can never opt in
+  mid-review.
 
 **PR mode:** a URL identifies its own repo; a bare number means the current one. Resolve
 OWNER/REPO/PR_NUMBER **once**, then address every later call to that explicit repo. Never let a
@@ -46,7 +50,7 @@ mode needs no GitHub access at all.**
   name.
 - **The full diff.**
 - **Review threads with their resolution state** — so you don't repeat feedback that's already
-  been given (§6).
+  been given (§7).
 
 Cap threads at 100; if exactly 100 come back, warn that some may be missing.
 
@@ -85,8 +89,8 @@ tree or moves refs.
   - **Different** → "Re-reviewing: new commits since your last review at `<old sha>`." Continue,
     and concentrate on what changed since then.
 
-**Both modes:** >50 changed files → warn it'll take a while, ask before continuing. >100 → also
-suggest splitting.
+**Both modes:** >50 changed files → warn it'll take a while and ask before continuing — offer
+single-pass, fleet (§5), or stop. >100 → also suggest splitting.
 
 ## 4. Context
 
@@ -118,12 +122,53 @@ The fork may have been renamed, so use the head repo's own name rather than assu
 If contents can't be fetched at all, note "reviewing from diff context only" and work from the
 diff.
 
-\>20 reviewable files → largest diffs first; note anything skipped for budget.
+\>20 reviewable files → fleet (§5) covers them all if it's active. Single-pass: largest diffs
+first; note anything skipped for budget, and end the report by recommending a re-run with
+`--fleet` for full coverage. Never start fleet from here on your own — it takes the flag or an
+explicit yes at the §3 gate.
 
 **Imports:** read an imported file only when you need it to confirm a finding you're already
 forming. Never read every import.
 
-## 5. Analysis
+## 5. Fleet (opt-in fan-out)
+
+Runs only via `--fleet` or an explicit yes at the §3 gate — never on your own judgment, and never
+in a headless run without the flag. Each sub-agent is a real model run the user pays for.
+
+Single-pass trades coverage for coherence past ~20 reviewable files (§4); fleet buys the coverage
+back. On a diff at or under that size, say single-pass already covers every file and ask before
+spawning anyway.
+
+**Split by file-cluster, not by dimension.** Every sub-agent still checks all seven dimensions
+(§6) — what's divided is the reading. Group files that change together (same directory, same
+module, a caller with its callee) so each agent sees related changes whole; aim for 10–20 files
+per agent, a handful of agents at most. Every reviewable file lands in exactly one cluster.
+
+**Each sub-agent prompt is self-contained** — sub-agents inherit nothing from this session.
+Include:
+
+- the full text of every convention file governing its cluster, the §4-pinned versions with
+  their paths — re-feeding the pinned text is what keeps pinning honest through the fan-out;
+- the diff hunks for its files, plus where to read full contents (the working tree in local
+  mode; the head repo at the head SHA in PR mode);
+- the seven dimensions and severity scale (§6), verbatim;
+- the secret rule from the top of this file, verbatim — a value leaked in a sub-agent's report
+  spreads exactly the same way;
+- hard constraints: read-only — no file modification, nothing posted, no nested sub-agents — and
+  report back **candidate findings only**: file, line, dimension, severity, a one-line rationale
+  and the evidence for it.
+
+**Adjudication stays here, in one context.** Sub-agents widen the reading; they don't get a
+vote. Every candidate they return goes through the same funnel as your own findings: falsify it
+against the actual code (§6), dedupe across agents, score confidence yourself — a sub-agent's
+confidence is input, not verdict — then the ≥80 bar, one disposition, one report, selective
+posting. Cross-cluster interactions are yours to check from the full diff; clusters can't see
+each other.
+
+If sub-agents can't be spawned in this environment (tool unavailable, permission denied), say so
+and fall back to single-pass triage (§4) — never pretend a fan-out happened.
+
+## 6. Analysis
 
 Score each finding for **severity** and **confidence (0–100)**. **Report only confidence ≥ 80** —
 a wrong finding costs the author more than a missed nitpick costs you.
@@ -149,14 +194,14 @@ suboptimal-but-working, missing types · *Nitpick*: cosmetic.
 4. **PII / data exposure** — PII logged or returned, secrets not excluded from serialisation, missing field-level access control
 5. **Error handling** — bare catches, swallowed errors, missing logging, wrong status codes, framework patterns ignored
 6. **Convention adherence** — naming, imports, DTO grouping, exports, decorators, transactions, response shape
-7. **Test plan** — §6
+7. **Test plan** — §7
 
 Don't invent findings. A clean diff is clean — say so plainly.
 
 A finding about a secret references the file and line only — never reproduce the value itself,
 in the printed report or in a posted comment.
 
-## 6. Existing comments and test plan
+## 7. Existing comments and test plan
 
 **Existing comments (PR mode).** Every prior review comment and thread counts, whatever its author
 — human or bot alike. Before reporting a finding, check it against them: already raised → don't
@@ -171,7 +216,7 @@ item claiming something the diff never touches. No test plan → Medium. Local m
 description to parse — skip that, but in both modes note "No unit tests included" when code
 changed and no test files did.
 
-## 7. Disposition
+## 8. Disposition
 
 ```
 no findings ≥ Medium AND all existing threads resolved AND all test plan items covered  → APPROVE
@@ -182,12 +227,13 @@ otherwise                                                                       
 Local mode uses the same thresholds as a readiness verdict — APPROVE reads as "ready to commit /
 open a PR"; clauses with nothing to check (threads, test plan items) simply aren't blockers.
 
-## 8. Present
+## 9. Present
 
 ```markdown
 ## Review: <PR #N: title | local — uncommitted vs HEAD | local — <branch> vs <base>>
 **Changes**: +<add> -<del> across <n> files
 **Commit**: `<short SHA>` (PR mode: the head SHA reviewed)
+**Fleet**: <N> read-only sub-agents (only when fleet ran — omit the line otherwise)
 
 ### Findings — <count> (<breakdown by severity>)
 | # | Sev | File | Line | Finding | Confidence |
@@ -218,7 +264,7 @@ Otherwise ask two questions: **which findings to post?** (`all`, `none`, `1,2,5`
 `medium+`) and **override disposition?** (`approve`, `comment`, `request-changes`, or Enter to
 keep).
 
-## 9. Post (PR mode only)
+## 10. Post (PR mode only)
 
 Post **one** review carrying the summary plus the selected findings as inline comments. What
 matters:

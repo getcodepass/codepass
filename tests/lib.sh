@@ -18,6 +18,8 @@ PLUGIN_DIR="$EVAL_ROOT/plugins/codepass"
 EVAL_TIMEOUT_SECS="${EVAL_TIMEOUT_SECS:-420}"   # wall clock per review; bounds interactive hangs
 EVAL_BUDGET_USD="${EVAL_BUDGET_USD:-2}"         # --max-budget-usd per review
 EVAL_MODEL="${EVAL_MODEL:-}"                    # optional --model override
+EVAL_EXTRA_TOOLS="${EVAL_EXTRA_TOOLS:-}"        # extra --allowedTools entries, space-separated
+                                                # (only the fleet scenario needs any)
 
 SCENARIO_NAME="$(basename "${0%.sh}")"
 
@@ -71,7 +73,8 @@ with_timeout() {
 #   --setting-sources       project-only: user settings/plugins stay out (hermetic, and avoids
 #                           colliding with a user-scope codepass install)
 #   --permission-mode dontAsk + allowlist: read-only git and file reads only; anything else is
-#                           denied instead of prompting (a prompt would hang -p forever)
+#                           denied instead of prompting (a prompt would hang -p forever).
+#                           EVAL_EXTRA_TOOLS appends entries (fleet adds Agent for sub-agents)
 #   Local-mode scenarios need no network: gh/curl are simply not allowlisted.
 # Non-zero exit (e.g. timeout on a scenario that must ask) is recorded, not fatal — grading
 # decides pass/fail from the captured output.
@@ -79,6 +82,8 @@ run_review() {
   local prompt="${1:-/codepass:pr-review}"
   local model_args=()
   if [ -n "$EVAL_MODEL" ]; then model_args=(--model "$EVAL_MODEL"); fi
+  local extra_tools=()
+  if [ -n "$EVAL_EXTRA_TOOLS" ]; then read -r -a extra_tools <<< "$EVAL_EXTRA_TOOLS"; fi
   RUN_RC=0
   (
     cd "$FIXTURE" && with_timeout "$EVAL_TIMEOUT_SECS" \
@@ -93,6 +98,7 @@ run_review() {
           "Bash(git remote:*)" "Bash(git for-each-ref:*)" "Bash(git cat-file:*)" \
           "Bash(git config --get:*)" \
           "Read" "Glob" "Grep" \
+          ${extra_tools[@]+"${extra_tools[@]}"} \
         --no-session-persistence \
         --max-budget-usd "$EVAL_BUDGET_USD" \
         ${model_args[@]+"${model_args[@]}"}
@@ -133,7 +139,7 @@ assert_absent() {
 }
 
 # assert_finding <sev-ERE> <file-ERE> <description> — a findings-table row whose severity
-# column matches <sev-ERE> and whose line mentions <file-ERE>. Row shape per SKILL.md §8:
+# column matches <sev-ERE> and whose line mentions <file-ERE>. Row shape per SKILL.md §9:
 #   | 1 | Critical | app.py | 3 | ... | 97 |
 assert_finding() {
   assert_matches "^\|[^|]*\| *(${1}) *\|.*${2}" "$3"
