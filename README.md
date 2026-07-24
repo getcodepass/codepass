@@ -1,6 +1,6 @@
 # codepass
 
-Single-pass code review plugin for Claude Code — review a GitHub PR, or your local changes before you commit. Cites your CLAUDE.md conventions, validates test plans, and auto-determines review disposition; in PR mode it posts the review as inline comments.
+Code review plugin for Claude Code — review a GitHub PR, or your local changes before you commit. Single-pass by default, with an opt-in `--fleet` fan-out for large PRs. Cites your CLAUDE.md conventions, validates test plans, and auto-determines review disposition; in PR mode it posts the review as inline comments.
 
 ## Prerequisites
 
@@ -41,6 +41,10 @@ Then use the slash command inside Claude Code:
 
 # Re-review even if you already reviewed the current commit
 /codepass:pr-review 219 --force
+
+# Large PR? Fan the reading out across read-only sub-agents
+# (opt-in — each sub-agent is an extra model run)
+/codepass:pr-review 219 --fleet
 ```
 
 ## Features
@@ -48,6 +52,9 @@ Then use the slash command inside Claude Code:
 ### Two Modes, One Reviewer
 - **PR mode** — pass a PR number or URL: fetches the PR, posts an inline review
 - **Local mode** — pass nothing: reviews uncommitted work and/or commits not yet merged to your base branch, prints the report, never posts
+
+### Fleet Mode (opt-in)
+Past ~20 changed files a single context starts prioritizing by diff size. `--fleet` splits the files into clusters and hands each to a read-only sub-agent so every file gets read — while falsification, dedupe, scoring, and disposition stay in one context. Off by default: codepass never spawns agents without the flag (or your explicit yes at the large-PR warning), and each sub-agent is an extra model run.
 
 ### 7-Dimension Analysis
 1. **Security** — Token/secret exposure, auth bypass, injection vectors
@@ -79,7 +86,7 @@ After analysis, choose which findings to post:
 
 | Tool | Cost | Context | Convention Awareness | Structured Analysis | Disposition Logic | Status |
 |------|------|---------|---------------------|--------------------|--------------------|--------|
-| **codepass** | **Free** | **Changed files + diff + metadata (single pass)** | **Yes (CLAUDE.md)** | **7 dimensions** | **Yes** | **Active** |
+| **codepass** | **Free** | **Changed files + diff + metadata (single pass; opt-in fleet)** | **Yes (CLAUDE.md)** | **7 dimensions** | **Yes** | **Active** |
 | [ai-codereviewer](https://github.com/villesau/ai-codereviewer) | Free (BYOK) | Diff chunks (one-shot) | No | None | No | Unmaintained |
 | [CodeRabbit](https://coderabbit.ai) | $12-24/dev/mo | Full repo clone + code graph + semantic index | Config files | Multi-linter (40+) | Yes | Active |
 | [Copilot PR Review](https://docs.github.com/en/copilot) | $10-39/dev/mo + metered AI credits | Diff + agentic file retrieval | `.github/copilot-instructions.md` | Risk scoring | No | Active |
@@ -89,7 +96,7 @@ After analysis, choose which findings to post:
 - **Convention-first** — reads your `CLAUDE.md` and `.claude/rules/` from the ref the diff is judged against — the PR's base branch, or `HEAD` locally — and cites the exact rule violated. Pinning conventions to that ref means a change can't loosen the rules it's graded by: it never marks its own homework. No other tool does this natively.
 - **Reviews before the PR exists** — the same reviewer runs on your uncommitted work locally, so problems get caught before anything is pushed.
 - **Findings must survive falsification** — before reporting, the reviewer tries to disprove each candidate against the actual code; what survives only by plausibility gets dropped, not posted.
-- **Single-pass, zero agents** — one context window, no agent spawning.
+- **Single-pass by default, fleet by choice** — one context window and zero agent spawning unless you opt in with `--fleet`; even then sub-agents only read (each re-fed the pinned conventions, so pinning survives the fan-out), and adjudication stays in one context.
 - **You control what gets posted** — selective posting by finding number or severity threshold. No auto-spam.
 
 ## How It Works
@@ -99,10 +106,10 @@ After analysis, choose which findings to post:
 1. Confirms it can reach the GitHub API with your existing access
 2. Parses PR number or URL, resolves the target repo explicitly for all API calls
 3. Fetches PR metadata, diff, and review threads (3 parallel API calls)
-4. Warns if PR has 50+ changed files
+4. Warns if PR has 50+ changed files (fleet is one of the offered ways forward)
 5. Reads CLAUDE.md and `.claude/rules/` conventions from the **base branch** (not the PR head)
 6. Fetches changed files — uses GitHub API for fork PRs, skips binaries/lockfiles
-7. Analyzes across 7 dimensions in a single pass
+7. Analyzes across 7 dimensions in a single pass — or, with `--fleet`, fans file-clusters out to read-only sub-agents and adjudicates their candidate findings centrally
 8. Presents structured findings with severity and confidence scores
 9. Asks which findings to post and whether to override disposition
 10. Posts review with inline comments pinned to the specific commit SHA
@@ -112,7 +119,7 @@ After analysis, choose which findings to post:
 1. Detects what there is to review with read-only git commands: uncommitted work (including untracked files), commits not yet merged to your base branch, or both — and asks when it's ambiguous
 2. Resolves the base as your merge target (upstream if it's a different branch, else the default branch), never the push target
 3. Reads CLAUDE.md and `.claude/rules/` conventions from the ref the diff is judged against (`HEAD` for uncommitted work, the base for branch review)
-4. Analyzes the same 7 dimensions and prints the same structured report
+4. Analyzes the same 7 dimensions (`--fleet` works here too) and prints the same structured report
 5. Stops there — nothing is posted, nothing leaves your machine
 
 ## Configuration
@@ -130,7 +137,7 @@ The plugin:
 
 - **Review threads**: Fetches up to 100 threads; warns if the cap was hit
 - **Binary/lock files**: Automatically skipped
-- **Large PRs**: Warns at 50+ files. Files prioritized by diff size.
+- **Large PRs**: Warns at 50+ files. Past 20 reviewable files, single-pass prioritizes by diff size and recommends `--fleet`, which covers every file via read-only sub-agents — at the cost of one extra model run per sub-agent
 - **Fork PRs**: Requires the fork repo to be readable with your GitHub access
 - **Duplicate reviews**: Re-running on an unchanged PR is skipped unless `--force`; a re-review posts a second review (GitHub doesn't support editing reviews)
 - **Local mode**: report only — never posts, and never modifies your working tree (read-only git throughout)

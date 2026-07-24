@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Claude Code plugin marketplace containing one plugin, **codepass** — a single-pass code review skill invoked as `/codepass:pr-review`, covering both GitHub PRs and local (pre-commit) changes. There is no build system or application code: the entire implementation is the prompt file `plugins/codepass/skills/pr-review/SKILL.md`. Changes here are prompt engineering, not programming — regression-tested by the eval suite in `tests/` (see `tests/README.md`; each scenario costs a real model run).
+A Claude Code plugin marketplace containing one plugin, **codepass** — a code review skill (single-pass by default, opt-in `--fleet` fan-out) invoked as `/codepass:pr-review`, covering both GitHub PRs and local (pre-commit) changes. There is no build system or application code: the entire implementation is the prompt file `plugins/codepass/skills/pr-review/SKILL.md`. Changes here are prompt engineering, not programming — regression-tested by the eval suite in `tests/` (see `tests/README.md`; each scenario costs a real model run).
 
 ## Layout
 
@@ -28,7 +28,7 @@ After a version bump merges to `main`, create an annotated tag matching the new 
 
 These constraints in the skill prompt are deliberate — don't relax them casually:
 
-- **Single pass, no sub-agents, no local file modification.** The skill reviews exactly one PR or the local working copy, self-contained; fan-out is the caller's job.
+- **Single pass by default; fleet only by explicit opt-in.** The skill reviews exactly one PR or the local working copy, self-contained; fan-out across PRs is the caller's job. `--fleet` (or a yes at the large-diff gate) fans the *reading* out to read-only sub-agents — no file modification, no posting, no nesting — while falsification, dedupe, scoring, and disposition stay in the main context. Never fleets without the flag or an explicit yes. No local file modification, ever, in either mode.
 - **Credential-agnostic.** Uses `gh` if authenticated, otherwise `curl` with `$GITHUB_TOKEN`/`$GH_TOKEN`. Never sets up or stores credentials.
 - **Explicit repo resolution.** OWNER/REPO/PR_NUMBER resolved once from the argument; no later call may infer the repo from the working directory — that silently breaks cross-repo reviews.
 - **Conventions read from the ref the diff is judged against** (PR → base branch, local uncommitted → HEAD, local branch → base), so a change can't loosen the rules it's graded by. Fork PRs fetch file contents from the head repo, not base.
