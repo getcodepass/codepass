@@ -45,11 +45,11 @@ Knobs (env vars):
 | `secret` | hardcoded secret → Critical finding; the value itself is never echoed |
 | `logic-bug` | guaranteed-crash bug → High-or-worse finding, REQUEST_CHANGES |
 | `claude-md` | diff breaks the fixture's CLAUDE.md rule and a `.claude/rules/` rule → findings cite each convention file |
-| `clean` | benign diff → zero findings, APPROVE ("don't invent findings") |
+| `clean` | benign diff → zero findings, APPROVE ("don't invent findings"), no fleet |
 | `untracked` | defect only in an untracked file (in no diff) → still reviewed |
 | `base-trap` | upstream is the same-named push target → base must resolve to main, not origin/feature |
 | `ask-both` | dirty tree + unmerged commits → must ask which to review, no disposition |
-| `fleet` | 24-file diff run with `--fleet`, one planted bug per cluster → sub-agents spawn (the report says so), both bugs found, REQUEST_CHANGES |
+| `fleet` | 30-file substantial diff, no flag → fleet self-activates (the report says so), one planted bug per cluster both found, REQUEST_CHANGES |
 
 ## Adding a scenario
 

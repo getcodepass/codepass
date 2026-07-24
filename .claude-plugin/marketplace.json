@@ -13,7 +13,7 @@
   "plugins": [
     {
       "name": "codepass",
-      "description": "Code review for PRs and local changes (single-pass by default; opt-in fleet fan-out) — inline GitHub comments, CLAUDE.md convention citations, test plan validation, and smart auto-disposition",
+      "description": "Code review for PRs and local changes (one pass for small diffs; automatic fleet fan-out on large ones) — inline GitHub comments, CLAUDE.md convention citations, test plan validation, and smart auto-disposition",
       "version": "3.2.0",
       "author": {
         "name": "smartniggs",

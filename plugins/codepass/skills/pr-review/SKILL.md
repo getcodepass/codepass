@@ -1,7 +1,7 @@
 ---
 description: "Review a GitHub PR or your local changes before you commit — severity/confidence findings, CLAUDE.md convention citations, test plan validation, and smart disposition"
-argument-hint: "[PR-number-or-URL] [--dry-run] [--force] [--fleet]"
-allowed-tools: ["Bash", "Glob", "Grep", "Read"]
+argument-hint: "[PR-number-or-URL] [--dry-run] [--force] [--fleet] [--no-fleet]"
+allowed-tools: ["Agent", "Bash", "Glob", "Grep", "Read"]
 ---
 
 # Review Agent
@@ -9,8 +9,9 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read"]
 A precise reviewer — single-pass by default — with two modes: a **PR** (posts a GitHub review)
 or the **local working copy** (prints findings — nothing leaves the machine). One review at a
 time; fanning out across many PRs is the caller's job — this stays self-contained. Do NOT spawn
-sub-agents unless fleet mode is active (§5 — only ever via `--fleet` or an explicit interactive
-yes). Do NOT modify local files. Never reproduce a secret's value anywhere in your output — not in narration,
+sub-agents except as fleet (§5) directs: small diffs get exactly one pass, zero agents; when a
+careful single pass can't cover everything, fleet fans the reading out. Do NOT modify local
+files. Never reproduce a secret's value anywhere in your output — not in narration,
 findings, remediation advice, or posted comments. Identify a secret by variable name and location
 (`DB_PASSWORD` at `app.py:3`); if you quote a line containing one, replace the value with
 `<redacted>`. Echoing the value spreads the leak — this output gets read, logged, and posted.
@@ -25,9 +26,8 @@ From `$ARGUMENTS`:
 - **Nothing** → **local mode**: review uncommitted and/or unmerged work in the current repo.
   `--dry-run` and `--force` do nothing here — say so if passed; local mode never posts and never
   skips.
-- `--fleet` (either mode) → fan the reading out across read-only sub-agents (§5). Without this
-  flag — or an explicit yes at the §3 gate — never fleet; a headless run can never opt in
-  mid-review.
+- `--fleet` / `--no-fleet` (either mode) → force or forbid the sub-agent fan-out (§5). With
+  neither flag, §5's coverage criterion decides on its own.
 
 **PR mode:** a URL identifies its own repo; a bare number means the current one. Resolve
 OWNER/REPO/PR_NUMBER **once**, then address every later call to that explicit repo. Never let a
@@ -89,8 +89,9 @@ tree or moves refs.
   - **Different** → "Re-reviewing: new commits since your last review at `<old sha>`." Continue,
     and concentrate on what changed since then.
 
-**Both modes:** >50 changed files → warn it'll take a while and ask before continuing — offer
-single-pass, fleet (§5), or stop. >100 → also suggest splitting.
+**Both modes:** >100 changed files → note that a split PR would get a better review, and
+continue — fleet (§5) absorbs the scale. Never stop to ask about size; a question here hangs
+headless runs.
 
 ## 4. Context
 
@@ -122,22 +123,27 @@ The fork may have been renamed, so use the head repo's own name rather than assu
 If contents can't be fetched at all, note "reviewing from diff context only" and work from the
 diff.
 
-\>20 reviewable files → fleet (§5) covers them all if it's active. Single-pass: largest diffs
-first; note anything skipped for budget, and end the report by recommending a re-run with
-`--fleet` for full coverage. Never start fleet from here on your own — it takes the flag or an
-explicit yes at the §3 gate.
+\>20 reviewable files → fleet (§5), firm — coverage is never silently sacrificed and never
+self-certified. Only under `--no-fleet`, or when sub-agents can't spawn: largest diffs first,
+and note anything skipped for budget.
 
 **Imports:** read an imported file only when you need it to confirm a finding you're already
 forming. Never read every import.
 
-## 5. Fleet (opt-in fan-out)
+## 5. Fleet (automatic fan-out)
 
-Runs only via `--fleet` or an explicit yes at the §3 gate — never on your own judgment, and never
-in a headless run without the flag. Each sub-agent is a real model run the user pays for.
+Fleet activates on its own — no flag needed — whenever either holds:
 
-Single-pass trades coverage for coherence past ~20 reviewable files (§4); fleet buys the coverage
-back. On a diff at or under that size, say single-pass already covers every file and ask before
-spawning anyway.
+- **>20 reviewable files. A firm rule, not a judgment call.** Past this point single-pass
+  attention degrades silently, and your own confidence that you "read everything carefully" is
+  exactly the signal that can't be trusted — do not reason your way out of fleeting because the
+  changes look repetitive or small.
+- **Fewer files whose total diff is too large to read every hunk with care** (thousands of
+  changed lines in a handful of files) — judgment, biased toward fleet: quality over cost.
+
+`--fleet` forces it at any size without debate; `--no-fleet` forbids it (single-pass triage
+applies, §4). Each sub-agent is a real model run, so say in one line why fleet did or didn't
+activate.
 
 **Split by file-cluster, not by dimension.** Every sub-agent still checks all seven dimensions
 (§6) — what's divided is the reading. Group files that change together (same directory, same
