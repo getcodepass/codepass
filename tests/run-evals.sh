@@ -57,10 +57,10 @@ for s in "${scenarios[@]}"; do
 done
 
 echo "=== results ==="
-printf '%-12s %s\n' "scenario" "result"
-printf '%-12s %s\n' "--------" "------"
+printf '%-20s %s\n' "scenario" "result"
+printf '%-20s %s\n' "--------" "------"
 printf '%s' "$results" | while IFS='|' read -r name result; do
-  printf '%-12s %s\n' "$name" "$result"
+  printf '%-20s %s\n' "$name" "$result"
 done
 
 if [ "$failures" -gt 0 ]; then
