@@ -32,7 +32,8 @@ These constraints in the skill prompt are deliberate — don't relax them casual
 - **Credential-agnostic.** Uses `gh` if authenticated, otherwise `curl` with `$GITHUB_TOKEN`/`$GH_TOKEN`. Never sets up or stores credentials.
 - **Explicit repo resolution.** OWNER/REPO/PR_NUMBER resolved once from the argument; no later call may infer the repo from the working directory — that silently breaks cross-repo reviews.
 - **Conventions read from the ref the diff is judged against** (PR → base branch, local uncommitted → HEAD, local branch → base), so a change can't loosen the rules it's graded by. Fork PRs fetch file contents from the head repo, not base.
-- **Confidence ≥ 80 to report a finding.** Disposition (APPROVE / COMMENT / REQUEST_CHANGES) follows the thresholds in §7 of the skill.
+- **Confidence ≥ 80 to report a finding**, with one deliberate exception: a risk that can be neither confirmed nor dismissed is reported marked `unverified` rather than dropped, and counts as Medium for disposition. Disposition (APPROVE / COMMENT / REQUEST_CHANGES) follows the thresholds in §8 of the skill.
+- **Posting is never silent and never assumed.** Interactive runs ask which findings to post; `--post <selector>` answers up front (`--post none` posts nothing); a non-interactive run (nobody can answer) defaults to `medium+` and names the selector it applied. Two failure modes are ruled out deliberately: analyzing and then quietly posting nothing, and dumping Low/Nitpick comments on a PR unattended. An explicit flag always wins over the default.
 - **Review payloads go on stdin, never temp files.** Reviews are pinned to the head SHA that was actually read.
 
 ## Style

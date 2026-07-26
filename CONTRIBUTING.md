@@ -49,13 +49,26 @@ claude plugin validate .
 /codepass:pr-review
 ```
 
+### Run the evals
+
+`tests/` holds the regression suite for `SKILL.md`: fixture repos, a headless review each, and coarse invariant grading. **Every scenario is a real model run and costs real tokens**, so it does not run in CI — running it is part of submitting a change.
+
+```bash
+bash tests/run-evals.sh                    # all scenarios
+bash tests/run-evals.sh conventions-pinned # just one, while iterating
+bash tests/run-evals.sh --help             # list scenarios
+```
+
+Read [tests/README.md](tests/README.md) first for the cost notes, the env knobs (timeout, budget, model), and how to add a scenario. Local-mode scenarios need no network.
+
 ## Submitting Changes
 
 1. Fork the repo and create a branch from `main`
 2. Make your changes to `plugins/codepass/skills/pr-review/SKILL.md` or other files
 3. Run `claude plugin validate .` to ensure the plugin is valid
-4. Test your changes against at least one real PR with `--dry-run` — and run local mode too if your change touches it
-5. Open a PR with a clear description of what changed and why
+4. Run the evals — the whole suite for a change to `SKILL.md`, or at minimum the scenarios covering what you touched. Add a scenario when you add behavior worth guarding
+5. Test your changes against at least one real PR with `--dry-run` — and run local mode too if your change touches it. PR mode has no eval coverage, so this manual check is the only thing guarding it
+6. Open a PR with a clear description of what changed and why
 
 ### What to include in your PR
 

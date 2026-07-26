@@ -45,6 +45,7 @@ Knobs (env vars):
 | `secret` | hardcoded secret → Critical finding; the value itself is never echoed |
 | `logic-bug` | guaranteed-crash bug → High-or-worse finding, REQUEST_CHANGES |
 | `claude-md` | diff breaks the fixture's CLAUDE.md rule and a `.claude/rules/` rule → findings cite each convention file |
+| `conventions-pinned` | the diff loosens CLAUDE.md *and* breaks the committed rule → judged against HEAD's copy, so the violation is still reported (the rule is arbitrary, so reading the working-tree copy finds nothing) |
 | `clean` | benign diff → zero findings, APPROVE ("don't invent findings"), no fleet |
 | `untracked` | defect only in an untracked file (in no diff) → still reviewed |
 | `base-trap` | upstream is the same-named push target → base must resolve to main, not origin/feature |
@@ -72,7 +73,13 @@ obviously synthetic (`*_EVAL_FAKE_*`) — never real or realistic credentials.
 
 - **PR mode is not covered.** Exercising it would need live GitHub PRs and (without
   `--dry-run`) would post reviews; these evals deliberately never touch the network. PR-mode
-  changes still need the manual dry-run check from CONTRIBUTING.
+  changes still need the manual dry-run check from CONTRIBUTING. This leaves the riskiest
+  surface — posting, `--post` selectors, the 422 retry, fork fetching, thread pagination and
+  dedupe — guarded by nothing but that manual check. A `gh` shim on `PATH` serving canned
+  fixture JSON would cover most of it without touching the network.
+- **Convention pinning is covered only for local uncommitted work** (`conventions-pinned`).
+  PR-mode pinning to the base branch, `.claude/rules/` pinning, and branch-vs-base pinning are
+  not exercised.
 - Invariants are necessary, not sufficient: a report can pass every grep and still be a poor
   review. Judging finding *content* would need an LLM judge (open question in issue #5).
 - One run per scenario per invocation — a flaky pass/fail on a boundary case is possible;

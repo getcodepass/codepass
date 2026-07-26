@@ -42,6 +42,11 @@ Then use the slash command inside Claude Code:
 # Re-review even if you already reviewed the current commit
 /codepass:pr-review 219 --force
 
+# Post without being asked — answers both prompts up front.
+# Takes the same selectors as the interactive prompt.
+/codepass:pr-review 219 --post all
+/codepass:pr-review 219 --post critical+high
+
 # Force or forbid the fleet fan-out — with neither flag,
 # codepass decides from what a single pass can actually cover
 /codepass:pr-review 219 --fleet
@@ -83,22 +88,26 @@ After analysis, choose which findings to post:
 - `critical+high` / `medium+` — Post by severity threshold
 - `none` — Skip posting
 
+Pass the same selector as `--post <selector>` to skip the prompt entirely (`--post none` posts nothing). Unattended runs (`claude -p`, CI) have nobody to answer the prompt, so they post `medium+` and name the selector they used — enough that a scheduled review isn't silently useless, not so much that it annotates a PR with nitpicks nobody asked for. Pass `--post all` to override, or `--dry-run` to post nothing.
+
 ## How It Compares
 
 | Tool | Cost | Context | Convention Awareness | Structured Analysis | Disposition Logic | Status |
 |------|------|---------|---------------------|--------------------|--------------------|--------|
-| **codepass** | **Free** | **Changed files + diff + metadata (single pass; auto-fleet on large diffs)** | **Yes (CLAUDE.md)** | **7 dimensions** | **Yes** | **Active** |
-| [ai-codereviewer](https://github.com/villesau/ai-codereviewer) | Free (BYOK) | Diff chunks (one-shot) | No | None | No | Unmaintained |
-| [CodeRabbit](https://coderabbit.ai) | $12-24/dev/mo | Full repo clone + code graph + semantic index | Config files | Multi-linter (40+) | Yes | Active |
-| [Copilot PR Review](https://docs.github.com/en/copilot) | $10-39/dev/mo + metered AI credits | Diff + agentic file retrieval | `.github/copilot-instructions.md` | Risk scoring | No | Active |
-| [Qodo Merge](https://github.com/qodo-ai/pr-agent) | Free (OSS) / credit-based from $30/mo | Diff + token budgeting + chunking | Config files (paid) | Single LLM call | No | Active |
+| **codepass** | **No seat fee — BYOK (your Claude Code usage)** | **Changed files + diff + metadata (single pass; auto-fleet on large diffs)** | **Yes (CLAUDE.md)** | **7 dimensions** | **Yes** | **Active** |
+| [ai-codereviewer](https://github.com/villesau/ai-codereviewer) | No seat fee — BYOK (your OpenAI key) | Diff chunks (one-shot) | No | None | No | Unmaintained |
+| [CodeRabbit](https://coderabbit.ai) | $24/dev/mo (Pro, annual; $30 monthly) | Full repo clone + code graph + semantic index | Config files | Multi-linter (40+) | Yes | Active |
+| [Copilot PR Review](https://docs.github.com/en/copilot) | $10–39/dev/mo + usage-based AI credits; reviews also consume Actions minutes | Diff + agentic file retrieval | `.github/copilot-instructions.md` | Risk scoring | No | Active |
+| [Qodo Merge](https://github.com/qodo-ai/pr-agent) | Free tier (30 PR reviews/mo) / ~$30/user/mo (Teams, annual) | Diff + token budgeting + chunking | Config files (paid) | Single LLM call | No | Active |
+
+**On cost — codepass is not free.** What it removes is the per-seat subscription; what it adds is metered usage. Against the paid tools' seat pricing as of the last release, the seat line goes to zero — a 100% reduction on that line, from $24/dev/mo (CodeRabbit Pro) or ~$30/user/mo (Qodo Teams) to $0 — but read that as a swap rather than a saving, because your Claude Code usage now carries the cost instead. A high-volume repo can spend more than a seat; an occasional one spends far less. If you already run Claude Code on a subscription, reviews draw against usage you are paying for regardless. Competitor pricing moves and these figures are point-in-time as of the last release, not a live quote — verify before you budget against them.
 
 **What makes codepass different:**
 - **Convention-first** — reads your `CLAUDE.md` and `.claude/rules/` from the ref the diff is judged against — the PR's base branch, or `HEAD` locally — and cites the exact rule violated. Pinning conventions to that ref means a change can't loosen the rules it's graded by: it never marks its own homework. No other tool does this natively.
 - **Reviews before the PR exists** — the same reviewer runs on your uncommitted work locally, so problems get caught before anything is pushed.
 - **Findings must survive falsification** — before reporting, the reviewer tries to disprove each candidate against the actual code; what survives only by plausibility gets dropped, not posted.
 - **One careful pass — or a fleet when coverage demands it** — small diffs get a single context that sees every cross-file interaction; when a single pass can't cover everything, read-only sub-agents fan out (each re-fed the pinned conventions, so pinning survives the fan-out) and adjudication stays in one context.
-- **You control what gets posted** — selective posting by finding number or severity threshold. No auto-spam.
+- **You control what gets posted** — selective posting by finding number or severity threshold, interactively or via `--post`. Nothing is posted that you didn't select; unattended runs, which have nobody to ask, hold to `medium+` rather than posting everything.
 
 ## How It Works
 
@@ -106,7 +115,7 @@ After analysis, choose which findings to post:
 
 1. Confirms it can reach the GitHub API with your existing access
 2. Parses PR number or URL, resolves the target repo explicitly for all API calls
-3. Fetches PR metadata, diff, and review threads (3 parallel API calls)
+3. Fetches PR metadata, diff, and review threads in parallel (threads are paginated to the end)
 4. Notes when a PR is big enough that splitting it would review better (100+ files) — and continues
 5. Reads CLAUDE.md and `.claude/rules/` conventions from the **base branch** (not the PR head)
 6. Fetches changed files — uses GitHub API for fork PRs, skips binaries/lockfiles
@@ -136,11 +145,12 @@ The plugin:
 
 ## Limitations
 
-- **Review threads**: Fetches up to 100 threads; warns if the cap was hit
+- **Review threads**: every page is fetched. Resolution state is GraphQL-only; where GraphQL can't be reached it reads as unknown, which withholds APPROVE
 - **Binary/lock files**: Automatically skipped
 - **Large diffs**: covered by automatic fleet fan-out, at the cost of one extra model run per sub-agent. `--no-fleet` caps the cost; single-pass then prioritizes by diff size and notes what it skipped
 - **Fork PRs**: Requires the fork repo to be readable with your GitHub access
-- **Duplicate reviews**: Re-running on an unchanged PR is skipped unless `--force`; a re-review posts a second review (GitHub doesn't support editing reviews)
+- **Duplicate reviews**: Re-running on an unchanged PR is skipped unless `--force`; a re-review posts a second review rather than updating the first (a review body can be edited via the API, but its set of inline comments cannot be replaced)
+- **Unattended runs**: with no human to answer the posting prompt, `claude -p`/CI runs post `medium+` by default and say so; pass an explicit `--post <selector>` (or `--dry-run`) to control that
 - **Local mode**: report only — never posts, and never modifies your working tree (read-only git throughout)
 
 ## Contributing

@@ -1,6 +1,6 @@
 ---
 description: "Review a GitHub PR or your local changes before you commit — severity/confidence findings, CLAUDE.md convention citations, test plan validation, and smart disposition"
-argument-hint: "[PR-number-or-URL] [--dry-run] [--force] [--fleet] [--no-fleet]"
+argument-hint: "[PR-number-or-URL] [--dry-run] [--force] [--post <selector>] [--fleet] [--no-fleet]"
 allowed-tools: ["Agent", "Bash", "Glob", "Grep", "Read"]
 ---
 
@@ -22,10 +22,11 @@ Stay concise; a review that costs 150K tokens is a failed review.
 From `$ARGUMENTS`:
 
 - A **PR number or URL** → **PR mode**. `--dry-run` (analyse, post nothing), `--force` (review
-  even if already reviewed).
+  even if already reviewed), `--post <selector>` (post without asking — the selector answers §9's
+  questions up front: `all`, `none`, `critical+high`, `medium+`, or finding numbers like `1,2,5`).
 - **Nothing** → **local mode**: review uncommitted and/or unmerged work in the current repo.
-  `--dry-run` and `--force` do nothing here — say so if passed; local mode never posts and never
-  skips.
+  `--dry-run`, `--force`, and `--post` do nothing here — say so if passed; local mode never posts
+  and never skips.
 - `--fleet` / `--no-fleet` (either mode) → force or forbid the sub-agent fan-out (§5). With
   neither flag, §5's coverage criterion decides on its own.
 
@@ -36,7 +37,11 @@ silently reads the wrong code and reports confident findings about the wrong pro
 
 Reach GitHub however this environment already allows — the `gh` CLI if it's authenticated,
 otherwise the GitHub API with `curl` and a token from `$GITHUB_TOKEN` or `$GH_TOKEN`. Don't set up
-or store credentials; use what's already there. If nothing has access, say so plainly and stop —
+or store credentials; use what's already there. **Pass the token by reference — write
+`$GITHUB_TOKEN` into the command and let the shell expand it. Never resolve its value first (via
+`gh auth token`, `echo`, or similar) and paste the literal into a command, a header, or a URL:**
+the command string is what gets logged and transcribed, so an expanded token leaks there even
+though nothing was stored. If nothing has access, say so plainly and stop —
 fixing that is the user's environment to sort out, not this skill's job to work around. **Local
 mode needs no GitHub access at all.**
 
@@ -52,7 +57,12 @@ mode needs no GitHub access at all.**
 - **Review threads with their resolution state** — so you don't repeat feedback that's already
   been given (§7).
 
-Cap threads at 100; if exactly 100 come back, warn that some may be missing.
+Threads come paginated — fetch **every** page, not just the first: a busy PR easily exceeds one
+page, and an unseen thread becomes duplicated feedback (§7). Resolution state (`isResolved`) is
+GraphQL-only — REST review comments don't carry it — so read it from `reviewThreads` there:
+`gh api graphql`, or a `curl` POST to `/graphql` with the same token, which reaches GraphQL
+exactly as it reaches REST. Only when GraphQL is genuinely unreachable, say resolution is
+unknown — an unknown can't satisfy §8's "all threads resolved" APPROVE clause.
 
 **Local mode** — read-only git only (`status`, `log`, `diff`, `rev-parse`, `merge-base`,
 `symbolic-ref`). Never `checkout`, `reset`, `stash`, or anything else that touches the working
@@ -104,6 +114,10 @@ change can't loosen the rules it's graded by — otherwise it marks its own home
 - PR mode → the PR's **base branch**.
 - Local, uncommitted → **HEAD**.
 - Local, branch vs base → the **base**.
+
+Read them **at that ref** — `git show <ref>:<path>` locally, the contents API at that ref in PR
+mode — never the working-tree or head-branch copy: those may contain exactly the uncommitted or
+proposed convention edits pinning exists to ignore.
 
 If the diff modifies a convention file, say you're reviewing against the pre-change version. None
 found → "No CLAUDE.md or `.claude/rules` — skipping convention checks", and review everything
@@ -160,6 +174,8 @@ Include:
 - the seven dimensions and severity scale (§6), verbatim;
 - the secret rule from the top of this file, verbatim — a value leaked in a sub-agent's report
   spreads exactly the same way;
+- when the cluster's contents are fetched from GitHub (PR mode), §1's token rule verbatim — a
+  sub-agent expanding the token into a command leaks it exactly as the main context would;
 - hard constraints: read-only — no file modification, nothing posted, no nested sub-agents — and
   report back **candidate findings only**: file, line, dimension, severity, a one-line rationale
   and the evidence for it.
@@ -184,8 +200,9 @@ disprove it: re-read the implicated code, trace the claimed failure path, check 
 callers that would prevent it. Drop what survives only because it sounds plausible — confidence
 reflects what the attempt showed, not how the claim feels. But falsification filters inference;
 it doesn't gag judgment: a finding you can neither confirm nor dismiss (a race, an injection
-path that depends on unseen input) is reported with its uncertainty stated, never silently
-dropped.
+path that depends on unseen input) is the **one exception to the ≥ 80 bar** — report it marked
+`unverified`, with what would confirm it, never silently dropped. §8 caps how unverified
+findings count.
 
 **Severity** — *Critical*: security holes, data leaks, auth bypass, secrets in code · *High*:
 logic bugs that will fail, missing error handling for likely cases, breaking changes · *Medium*:
@@ -230,6 +247,9 @@ any finding ≥ High                                                            
 otherwise                                                                                → COMMENT
 ```
 
+`unverified` findings (§6) count as **Medium** here whatever their claimed severity — enough to
+block APPROVE, never enough to force REQUEST_CHANGES on their own.
+
 Local mode uses the same thresholds as a readiness verdict — APPROVE reads as "ready to commit /
 open a PR"; clauses with nothing to check (threads, test plan items) simply aren't blockers.
 
@@ -266,9 +286,20 @@ advice to rotate it. Variable name + `file:line` identifies it (the rule at the 
 
 `--dry-run` (PR mode) → stop here: "Dry run complete. No review posted."
 
-Otherwise ask two questions: **which findings to post?** (`all`, `none`, `1,2,5`, `critical+high`,
-`medium+`) and **override disposition?** (`approve`, `comment`, `request-changes`, or Enter to
-keep).
+Otherwise decide what gets posted:
+
+- `--post <selector>` was given → it answers both questions: post that selection at the computed
+  disposition, no prompts. `--post none` posts nothing — stop with the report.
+- **The session is non-interactive** (your context says the user cannot answer questions
+  mid-task) and no `--post` was given → post `medium+` at the computed disposition, and say
+  which selector you applied and why. Asking would post nothing, silently; posting everything
+  would put Low and Nitpick comments on a PR nobody asked you to annotate. `--post all`
+  overrides.
+- No findings → skip "which findings"; just confirm posting the summary at the computed
+  disposition.
+- Otherwise ask two questions: **which findings to post?** (`all`, `none`, `1,2,5`,
+  `critical+high`, `medium+`) and **override disposition?** (`approve`, `comment`,
+  `request-changes`, or Enter to keep).
 
 ## 10. Post (PR mode only)
 
@@ -288,8 +319,9 @@ matters:
 - Footer the summary with `*Reviewed with [codepass](https://github.com/getcodepass/codepass)*`.
 
 **Errors.** A 422 is almost always a bad line mapping — drop **all** inline comments, move those
-findings into the summary table, retry **once**. A 403 means the credential lacks `repo` scope:
-say so. Anything else: surface it and offer to save the payload for inspection. Never retry more
+findings into the summary table, retry **once**. A 403 means the credential can't write reviews
+here — classic tokens need `repo` scope, fine-grained ones **Pull requests: write**: say which.
+Anything else: surface it and offer to save the payload for inspection. Never retry more
 than once.
 
 Done → "Review posted to PR #N as DISPOSITION. X inline comments added."
