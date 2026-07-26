@@ -37,7 +37,11 @@ silently reads the wrong code and reports confident findings about the wrong pro
 
 Reach GitHub however this environment already allows — the `gh` CLI if it's authenticated,
 otherwise the GitHub API with `curl` and a token from `$GITHUB_TOKEN` or `$GH_TOKEN`. Don't set up
-or store credentials; use what's already there. If nothing has access, say so plainly and stop —
+or store credentials; use what's already there. **Pass the token by reference — write
+`$GITHUB_TOKEN` into the command and let the shell expand it. Never resolve its value first (via
+`gh auth token`, `echo`, or similar) and paste the literal into a command, a header, or a URL:**
+the command string is what gets logged and transcribed, so an expanded token leaks there even
+though nothing was stored. If nothing has access, say so plainly and stop —
 fixing that is the user's environment to sort out, not this skill's job to work around. **Local
 mode needs no GitHub access at all.**
 
@@ -168,6 +172,8 @@ Include:
 - the seven dimensions and severity scale (§6), verbatim;
 - the secret rule from the top of this file, verbatim — a value leaked in a sub-agent's report
   spreads exactly the same way;
+- when the cluster's contents are fetched from GitHub (PR mode), §1's token rule verbatim — a
+  sub-agent expanding the token into a command leaks it exactly as the main context would;
 - hard constraints: read-only — no file modification, nothing posted, no nested sub-agents — and
   report back **candidate findings only**: file, line, dimension, severity, a one-line rationale
   and the evidence for it.
