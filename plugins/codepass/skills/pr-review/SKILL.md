@@ -58,9 +58,11 @@ mode needs no GitHub access at all.**
   been given (§7).
 
 Threads come paginated — fetch **every** page, not just the first: a busy PR easily exceeds one
-page, and an unseen thread becomes duplicated feedback (§7). Thread resolution state exists only
-in the GraphQL API; with REST-only access, say resolution is unknown — an unknown can't satisfy
-§8's "all threads resolved" APPROVE clause.
+page, and an unseen thread becomes duplicated feedback (§7). Resolution state (`isResolved`) is
+GraphQL-only — REST review comments don't carry it — so read it from `reviewThreads` there:
+`gh api graphql`, or a `curl` POST to `/graphql` with the same token, which reaches GraphQL
+exactly as it reaches REST. Only when GraphQL is genuinely unreachable, say resolution is
+unknown — an unknown can't satisfy §8's "all threads resolved" APPROVE clause.
 
 **Local mode** — read-only git only (`status`, `log`, `diff`, `rev-parse`, `merge-base`,
 `symbolic-ref`). Never `checkout`, `reset`, `stash`, or anything else that touches the working

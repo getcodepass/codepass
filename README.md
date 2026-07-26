@@ -115,7 +115,7 @@ Pass the same selector as `--post <selector>` to skip the prompt entirely (`--po
 
 1. Confirms it can reach the GitHub API with your existing access
 2. Parses PR number or URL, resolves the target repo explicitly for all API calls
-3. Fetches PR metadata, diff, and review threads (3 parallel API calls)
+3. Fetches PR metadata, diff, and review threads in parallel (threads are paginated to the end)
 4. Notes when a PR is big enough that splitting it would review better (100+ files) — and continues
 5. Reads CLAUDE.md and `.claude/rules/` conventions from the **base branch** (not the PR head)
 6. Fetches changed files — uses GitHub API for fork PRs, skips binaries/lockfiles
@@ -145,7 +145,7 @@ The plugin:
 
 ## Limitations
 
-- **Review threads**: Fetches up to 100 threads; warns if the cap was hit
+- **Review threads**: every page is fetched. Resolution state is GraphQL-only; where GraphQL can't be reached it reads as unknown, which withholds APPROVE
 - **Binary/lock files**: Automatically skipped
 - **Large diffs**: covered by automatic fleet fan-out, at the cost of one extra model run per sub-agent. `--no-fleet` caps the cost; single-pass then prioritizes by diff size and notes what it skipped
 - **Fork PRs**: Requires the fork repo to be readable with your GitHub access
