@@ -54,7 +54,8 @@ Knobs (env vars):
 
 ## Adding a scenario
 
-Copy an existing script in `tests/scenarios/` (they are self-documenting):
+Copy an existing executable script in `tests/scenarios/` (they are self-documenting), and
+preserve its executable bit so the scenario can also be run directly:
 
 1. Source `tests/lib.sh` — it gives you a trap-cleaned temp dir, `$FIXTURE` (empty repo dir),
    and helpers (`init_fixture`, `fixture_commit`, `run_review`, `assert_*`).
